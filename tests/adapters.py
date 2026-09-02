@@ -200,7 +200,23 @@ def run_rope(
     Returns:
         Float[Tensor, " ... sequence_length d_k"]: Tensor with RoPEd input.
     """
-    raise NotImplementedError
+    d_half = d_k // 2
+    i = torch.arange(d_half, dtype=torch.float32, device=in_query_or_key.device)
+    inv_freq = theta ** (-2.0 * i / d_k)          # 32根指针各自的转速（前面快，后面慢）
+    angles = token_positions.to(torch.float32)[..., None] * inv_freq  # 位置 × 转速 = 每根指针该转的角度
+    cos = torch.cos(angles)
+    sin = torch.sin(angles)
+
+    x1 = in_query_or_key[..., 0::2]   # 每对的前一个数字（第1,3,5...个）
+    x2 = in_query_or_key[..., 1::2]   # 每对的后一个数字（第2,4,6...个）
+
+    # 2维旋转公式: (x,y) 转θ → (x·cosθ − y·sinθ,  x·sinθ + y·cosθ)
+    out1 = x1 * cos - x2 * sin
+    out2 = x1 * sin + x2 * cos
+
+    # 交错放回: [out1_0, out2_0, out1_1, out2_1, ...] 恢复成 d_k 维
+    return torch.stack((out1, out2), dim=-1).flatten(-2)
+
 
 
 def run_transformer_block(

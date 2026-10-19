@@ -107,7 +107,11 @@ def run_scaled_dot_product_attention(
     Returns:
         Float[Tensor, " ... queries d_v"]: Output of SDPA
     """
-    raise NotImplementedError
+    d_k = Q.shape[-1]
+    scores = (Q @ K.transpose(-2, -1)) / (d_k ** 0.5)
+    if mask is not None:
+        scores = scores.masked_fill(~mask, float('-inf'))
+    return run_softmax(scores, dim=-1) @ V
 
 
 def run_multihead_self_attention(
@@ -452,7 +456,9 @@ def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, "
         Float[Tensor, "..."]: Tensor of with the same shape as `in_features` with the output of
         softmax normalizing the specified `dim`.
     """
-    raise NotImplementedError
+    x_max = in_features.max(dim=dim, keepdim=True).values
+    exp = torch.exp(in_features - x_max)
+    return exp / exp.sum(dim=dim, keepdim=True)
 
 
 def run_cross_entropy(

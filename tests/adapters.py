@@ -83,7 +83,10 @@ def run_swiglu(
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
+    gate = in_features @ w1_weight.T
+    gate = gate * torch.sigmoid(gate)  # SiLU = x * sigmoid(x)
+    up = in_features @ w3_weight.T
+    return (gate * up) @ w2_weight.T
 
 
 def run_scaled_dot_product_attention(

@@ -114,6 +114,28 @@ def run_scaled_dot_product_attention(
     return run_softmax(scores, dim=-1) @ V
 
 
+
+def _mha_core(d_model, num_heads, q_proj_weight, k_proj_weight, v_proj_weight,
+              o_proj_weight, in_features, theta=None, token_positions=None):
+    seq_len = in_features.shape[-2]
+    d_head = d_model // num_heads
+    q = in_features @ q_proj_weight.T
+    k = in_features @ k_proj_weight.T
+    v = in_features @ v_proj_weight.T
+    q = q.reshape(q.shape[:-1] + (num_heads, d_head)).transpose(-3, -2)
+    k = k.reshape(k.shape[:-1] + (num_heads, d_head)).transpose(-3, -2)
+    v = v.reshape(v.shape[:-1] + (num_heads, d_head)).transpose(-3, -2)
+    if theta is not None:
+        if token_positions is None:
+            token_positions = torch.arange(seq_len)
+        q = run_rope(d_head, theta, seq_len, q, token_positions)
+        k = run_rope(d_head, theta, seq_len, k, token_positions)
+    causal = torch.tril(torch.ones(seq_len, seq_len, dtype=torch.bool, device=in_features.device))
+    out = run_scaled_dot_product_attention(q, k, v, mask=causal)
+    out = out.transpose(-3, -2).reshape(out.shape[:-3] + (seq_len, d_model))
+    return out @ o_proj_weight.T
+
+
 def run_multihead_self_attention(
     d_model: int,
     num_heads: int,
@@ -145,7 +167,8 @@ def run_multihead_self_attention(
         Float[Tensor, " ... sequence_length d_model"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    return _mha_core(d_model, num_heads, q_proj_weight, k_proj_weight, v_proj_weight,
+                     o_proj_weight, in_features)
 
 
 def run_multihead_self_attention_with_rope(
@@ -185,7 +208,8 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_model"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    return _mha_core(d_model, num_heads, q_proj_weight, k_proj_weight, v_proj_weight,
+                     o_proj_weight, in_features, theta=theta, token_positions=token_positions)
 
 
 def run_rope(
@@ -296,7 +320,8 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    return _mha_core(d_model, num_heads, q_proj_weight, k_proj_weight, v_proj_weight,
+                     o_proj_weight, in_features)
 
 
 def run_transformer_lm(
@@ -378,7 +403,8 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    return _mha_core(d_model, num_heads, q_proj_weight, k_proj_weight, v_proj_weight,
+                     o_proj_weight, in_features, theta=theta, token_positions=token_positions)
 
 
 def run_rmsnorm(
